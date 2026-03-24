@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* GLOBAL LIGHT THEME HACK (Aydınlatma Butonu için) */
+/* 1. Siyahları beyaz, beyazları siyah yapar (invert 1) */
+/* 2. Diğer renklerin bozulmaması için (hue-rotate 180deg) kendi etrafında döndürür */
+.theme-light {
+  filter: invert(1) hue-rotate(180deg);
+  background-color: #ffffff;
+}
+
+/* Resim, video ve keep-dark elementleri orijinal halinde kalsın */
+.theme-light img,
+.theme-light video,
+.theme-light canvas,
+.theme-light .keep-dark {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* keep-dark içindekilere tekrar filtre SURULMEZ (aksi halde 3 kat invert olup bozulurlar) */
+.theme-light .keep-dark img,
+.theme-light .keep-dark video,
+.theme-light .keep-dark canvas {
+  filter: none;
+}
