@@ -14,8 +14,6 @@ interface MachineData {
     uptime: string;
     parts_count: number;
     last_sync: string;
-    camera_frame?: string;
-    desktop_frame?: string;
     extra_value?: number;
     data_1?: string;
     data_2?: string;
@@ -38,10 +36,7 @@ export default function MachineCard({ serial }: MachineProps) {
     const [isRemoteViewing, setIsRemoteViewing] = useState(false);
     const [showInfo, setShowInfo] = useState(false);
     const [mountTime] = useState(Date.now());
-
-    // "Son İyi Kare" belleği
-    const lastGoodFrame = useRef<string | null>(null);
-    const [displayFrame, setDisplayFrame] = useState<string | null>(null);
+    const [imgTimestamp, setImgTimestamp] = useState(Date.now());
 
     // Chat State
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -68,26 +63,7 @@ export default function MachineCard({ serial }: MachineProps) {
                     const lastSyncTS = new Date(val.last_sync.replace(' ', 'T')).getTime();
                     const nowTS = Date.now();
                     setIsOnline(nowTS - lastSyncTS < 30000);
-
-                    // SIFIRLAMA MANTIĞI: Eğer görüntü mountTime'dan eskiyse gösterme
-                    const isFresh = lastSyncTS > mountTime;
-
-                    if (isFresh) {
-                        // Kamera Görüntüsü
-                        if (val.camera_frame) {
-                            const cleaned = val.camera_frame.replace(/[\r\n\s]/g, '');
-                            if (cleaned.length > 100) {
-                                lastGoodFrame.current = cleaned;
-                                setDisplayFrame(cleaned);
-                            }
-                        }
-                    } else {
-                        // Eski görüntüleri temizle
-                        setDisplayFrame(null);
-                        lastGoodFrame.current = null;
-                        // data içindeki desktop_frame'i temizlemek için data state'ini de manipüle edebiliriz
-                        // ama data Snapshot'tan geldiği için aşağıda UI'da kontrol etmek daha temiz.
-                    }
+                    setImgTimestamp(Date.now()); // Veri her güncellendiğinde resimleri yenile
                 }
             } else {
                 setData(null);
@@ -178,25 +154,10 @@ export default function MachineCard({ serial }: MachineProps) {
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !serial) return;
-
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            let base64 = ev.target?.result as string;
-            if (base64.includes(',')) base64 = base64.split(',')[1];
-
-            const chatRef = ref(db, `machines/${serial}/chat/messages`);
-            await push(chatRef, {
-                sender: 'admin',
-                text: '[FOTOĞRAF GÖNDERİLDİ]',
-                image: base64,
-                timestamp: serverTimestamp()
-            });
-            // İşlem bitince input'u temizle
-            if (fileInputRef.current) fileInputRef.current.value = '';
-        };
-        reader.readAsDataURL(file);
+        setToast({ message: "Fotoğraf gönderimi optimizasyon nedeniyle geçici olarak devre dışıdır.", visible: true });
+        setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+        // İşlem bitince input'u temizle
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const toggleRemoteView = async (active: boolean) => {
@@ -267,12 +228,13 @@ export default function MachineCard({ serial }: MachineProps) {
 
                     {/* Window Area (Camera Feed) */}
                     <div className="relative mx-5 mt-8 mb-4 bg-black rounded-xl border-[6px] border-[#1a1a1e] shadow-[inset_0_10px_20px_rgba(0,0,0,0.9),0_5px_15px_rgba(0,0,0,0.3)] overflow-hidden group/cam">
-                        {displayFrame ? (
+                        {isOnline ? (
                             <>
                                 <img
-                                    src={`data:image/jpeg;base64,${displayFrame}`}
+                                    src={`/live/${serial}-camera.jpg?t=${imgTimestamp}`}
                                     alt="CNC Camera"
                                     className="w-full aspect-video object-cover transition-transform duration-1000 group-hover/cam:scale-110"
+                                    onError={(e: any) => e.target.style.display = 'none'}
                                 />
                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/cam:opacity-100 transition-all duration-500 flex items-center justify-center backdrop-blur-[2px] z-30">
                                     <button
@@ -445,9 +407,9 @@ export default function MachineCard({ serial }: MachineProps) {
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all active:scale-95 shadow-lg"
-                                    title="Fotoğraf Gönder"
+                                    onClick={() => setToast({ message: "Fotoğraf gönderimi devre dışıdır.", visible: true })}
+                                    className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-gray-400 opacity-30 cursor-not-allowed"
+                                    title="Fotoğraf Gönder (Devre Dışı)"
                                 >
                                     <ImageIcon size={18} />
                                 </button>
@@ -488,7 +450,7 @@ export default function MachineCard({ serial }: MachineProps) {
 
             {/* Fullscreen Video Modal */}
             {
-                isFullscreen && displayFrame && (
+                isFullscreen && isOnline && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/98 backdrop-blur-3xl animate-in fade-in duration-500">
                         <div className="absolute top-4 right-4 md:top-10 md:right-10">
                             <button
@@ -502,9 +464,10 @@ export default function MachineCard({ serial }: MachineProps) {
                         <div className="w-full max-w-7xl p-2 md:p-6 animate-in zoom-in-95 duration-700">
                             <div className="relative aspect-video rounded-3xl md:rounded-[3rem] overflow-hidden border-2 md:border-4 border-white/10 shadow-[0_0_150px_rgba(220,38,38,0.2)]">
                                 <img
-                                    src={`data:image/jpeg;base64,${displayFrame}`}
+                                    src={`/live/${serial}-camera.jpg?t=${imgTimestamp}`}
                                     alt="CNC Feed Fullscreen"
                                     className="w-full h-full object-cover bg-black"
+                                    onError={(e: any) => e.target.style.display = 'none'}
                                 />
 
                                 <div className="absolute bottom-2 left-2 md:bottom-10 md:left-10 bg-black/60 md:bg-black/80 backdrop-blur-md md:backdrop-blur-2xl px-3 py-1.5 md:px-8 md:py-5 rounded-xl md:rounded-[2rem] border border-white/5 md:border-white/10 shadow-2xl">
@@ -543,11 +506,12 @@ export default function MachineCard({ serial }: MachineProps) {
 
                         <div className="w-full max-w-[90vw] max-h-[90vh] p-2 md:p-6 animate-in zoom-in-95 duration-700">
                             <div className="relative rounded-3xl md:rounded-[2rem] overflow-hidden border-2 md:border-4 border-white/10 shadow-[0_0_100px_rgba(245,158,11,0.15)] bg-black/40">
-                                {data.desktop_frame && new Date(data.last_sync.replace(' ', 'T')).getTime() > mountTime ? (
+                                {isOnline ? (
                                     <img
-                                        src={`data:image/jpeg;base64,${data.desktop_frame}`}
+                                        src={`/live/${serial}-desktop.jpg?t=${imgTimestamp}`}
                                         alt="Remote Desktop Feed"
                                         className="w-full h-full object-contain cursor-crosshair"
+                                        onError={(e: any) => e.target.style.display = 'none'}
                                     />
                                 ) : (
                                     <div className="aspect-video w-full flex flex-col items-center justify-center gap-6 py-40">

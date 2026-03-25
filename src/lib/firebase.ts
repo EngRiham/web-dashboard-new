@@ -3,14 +3,14 @@ import { getAuth } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAhbjCBDAJj3lYks5Zp2RhfFzO5TktWjaw",
-  authDomain: "cnc-monitor-967f7.firebaseapp.com",
-  databaseURL: "https://cnc-monitor-967f7-default-rtdb.firebaseio.com",
-  projectId: "cnc-monitor-967f7",
-  storageBucket: "cnc-monitor-967f7.firebasestorage.app",
-  messagingSenderId: "106748688678",
-  appId: "1:106748688678:web:2d1105007fb7b12cf3a9e7",
-  measurementId: "G-EJVL8LMY5G"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
