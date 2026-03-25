@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import ImageKit from "imagekit";
+
+const imagekit = new ImageKit({
+  publicKey: process.env.IMAGEKIT_PUBLIC_KEY || "",
+  privateKey: process.env.IMAGEKIT_PRIVATE_KEY || "",
+  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT || ""
+});
 
 export async function POST(req: Request) {
     try {
@@ -18,21 +23,21 @@ export async function POST(req: Request) {
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
 
-        const uploadDir = path.join(process.cwd(), "public", "live");
-        const filePath = path.join(uploadDir, `${serial}-desktop.jpg`);
-
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-
-        fs.writeFileSync(filePath, buffer);
+        const response = await imagekit.upload({
+            file: buffer,
+            fileName: `${serial}-desktop.jpg`,
+            folder: `/machines/${serial}/`,
+            useUniqueFileName: false,
+            overwriteFile: true
+        });
 
         return NextResponse.json({
             success: true,
-            imageUrl: `/live/${serial}-desktop.jpg`,
+            url: response.url,
         });
     } catch (error) {
         console.error("upload-desktop error:", error);
         return NextResponse.json({ success: false }, { status: 500 });
     }
 }
+

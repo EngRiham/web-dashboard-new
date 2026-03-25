@@ -19,6 +19,8 @@ interface MachineData {
     data_2?: string;
     data_3?: string;
     data_4?: string;
+    camera_url?: string;
+    desktop_url?: string;
 }
 
 interface ChatMessage {
@@ -230,12 +232,14 @@ export default function MachineCard({ serial }: MachineProps) {
                     <div className="relative mx-5 mt-8 mb-4 bg-black rounded-xl border-[6px] border-[#1a1a1e] shadow-[inset_0_10px_20px_rgba(0,0,0,0.9),0_5px_15px_rgba(0,0,0,0.3)] overflow-hidden group/cam">
                         {isOnline ? (
                             <>
-                                <img
-                                    src={`/live/${serial}-camera.jpg?t=${imgTimestamp}`}
-                                    alt="CNC Camera"
-                                    className="w-full aspect-video object-cover transition-transform duration-1000 group-hover/cam:scale-110"
-                                    onError={(e: any) => e.target.style.display = 'none'}
-                                />
+                                {data?.camera_url && (
+                                    <img
+                                        src={`${data.camera_url}?t=${imgTimestamp}`}
+                                        alt="CNC Camera"
+                                        className="w-full aspect-video object-cover transition-transform duration-1000 group-hover/cam:scale-110"
+                                        onError={(e: any) => e.target.style.display = 'none'}
+                                    />
+                                )}
                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/cam:opacity-100 transition-all duration-500 flex items-center justify-center backdrop-blur-[2px] z-30">
                                     <button
                                         onClick={() => setIsFullscreen(true)}
@@ -463,12 +467,14 @@ export default function MachineCard({ serial }: MachineProps) {
 
                         <div className="w-full max-w-7xl p-2 md:p-6 animate-in zoom-in-95 duration-700">
                             <div className="relative aspect-video rounded-3xl md:rounded-[3rem] overflow-hidden border-2 md:border-4 border-white/10 shadow-[0_0_150px_rgba(220,38,38,0.2)]">
-                                <img
-                                    src={`/live/${serial}-camera.jpg?t=${imgTimestamp}`}
-                                    alt="CNC Feed Fullscreen"
-                                    className="w-full h-full object-cover bg-black"
-                                    onError={(e: any) => e.target.style.display = 'none'}
-                                />
+                                {data?.camera_url && (
+                                    <img
+                                        src={`${data.camera_url}?t=${imgTimestamp}`}
+                                        alt="CNC Feed Fullscreen"
+                                        className="w-full h-full object-cover bg-black"
+                                        onError={(e: any) => e.target.style.display = 'none'}
+                                    />
+                                )}
 
                                 <div className="absolute bottom-2 left-2 md:bottom-10 md:left-10 bg-black/60 md:bg-black/80 backdrop-blur-md md:backdrop-blur-2xl px-3 py-1.5 md:px-8 md:py-5 rounded-xl md:rounded-[2rem] border border-white/5 md:border-white/10 shadow-2xl">
                                     <p className="text-white font-black tracking-tighter text-xs md:text-2xl uppercase italic mb-0.5 md:mb-1 flex items-center gap-1.5 md:gap-3">
@@ -507,12 +513,16 @@ export default function MachineCard({ serial }: MachineProps) {
                         <div className="w-full max-w-[90vw] max-h-[90vh] p-2 md:p-6 animate-in zoom-in-95 duration-700">
                             <div className="relative rounded-3xl md:rounded-[2rem] overflow-hidden border-2 md:border-4 border-white/10 shadow-[0_0_100px_rgba(245,158,11,0.15)] bg-black/40">
                                 {isOnline ? (
-                                    <img
-                                        src={`/live/${serial}-desktop.jpg?t=${imgTimestamp}`}
-                                        alt="Remote Desktop Feed"
-                                        className="w-full h-full object-contain cursor-crosshair"
-                                        onError={(e: any) => e.target.style.display = 'none'}
-                                    />
+                                    <>
+                                        {data?.desktop_url && (
+                                            <img
+                                                src={`${data.desktop_url}?t=${imgTimestamp}`}
+                                                alt="Remote Desktop Feed"
+                                                className="w-full h-full object-contain cursor-crosshair"
+                                                onError={(e: any) => e.target.style.display = 'none'}
+                                            />
+                                        )}
+                                    </>
                                 ) : (
                                     <div className="aspect-video w-full flex flex-col items-center justify-center gap-6 py-40">
                                         <Monitor className="text-amber-500/20 animate-pulse" size={80} />
