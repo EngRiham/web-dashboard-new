@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { db } from "@/lib/firebase";
 import { ref, onValue, push, set, serverTimestamp, update, get, remove } from "firebase/database";
-import { Camera, Clock, Activity, Maximize2, X, ArrowUpRight, MessageSquare, Send, User, Monitor, ImageIcon, Maximize, Minimize } from "lucide-react";
+import { Camera, Clock, Activity, Maximize2, X, ArrowUpRight, MessageSquare, Send, User, Monitor, ImageIcon, Maximize, Minimize, Trash2, UploadCloud, FileType2 } from "lucide-react";
 
 interface MachineProps {
     serial: string;
@@ -21,6 +21,14 @@ interface MachineData {
     data_4?: string;
     camera_url?: string;
     desktop_url?: string;
+    pending_file?: {
+        fileName: string;
+        tempUrl: string;
+        status: "waiting" | "downloaded" | "failed";
+        createdAt: number;
+        fileId: string;
+        savedPath?: string;
+    };
 }
 
 interface ChatMessage {
@@ -30,6 +38,7 @@ interface ChatMessage {
     timestamp: number;
     image?: string;
     imageUrl?: string;
+    imageFileId?: string;
 }
 
 export default function MachineCard({ serial }: MachineProps) {
@@ -39,7 +48,6 @@ export default function MachineCard({ serial }: MachineProps) {
     const [isRemoteViewing, setIsRemoteViewing] = useState(false);
     const [showInfo, setShowInfo] = useState(false);
     const [mountTime] = useState(Date.now());
-    const [imgTimestamp, setImgTimestamp] = useState(Date.now());
     const [isCameraActive, setIsCameraActive] = useState(false);
 
     // Chat State
@@ -67,7 +75,9 @@ export default function MachineCard({ serial }: MachineProps) {
                     const lastSyncTS = new Date(val.last_sync.replace(' ', 'T')).getTime();
                     const nowTS = Date.now();
                     setIsOnline(nowTS - lastSyncTS < 30000);
-                    setImgTimestamp(Date.now()); // Veri her güncellendiğinde resimleri yenile
+                    
+                    // Frontend loglama: Delphi'den yeni resim gelme süresini ölçmek için
+                    // console.log(`[${serial}] Yeni Veri -> Camera: ${val.camera_url} | Desktop: ${val.desktop_url}`);
                 }
             } else {
                 setData(null);
@@ -77,17 +87,6 @@ export default function MachineCard({ serial }: MachineProps) {
 
         return () => unsubscribe();
     }, [serial]);
-
-    // Kamera Güncelleme Döngüsü (Sadece aktifse)
-    useEffect(() => {
-        if (!isCameraActive || !isOnline) return;
-
-        const interval = setInterval(() => {
-            setImgTimestamp(Date.now());
-        }, 3000);
-
-        return () => clearInterval(interval);
-    }, [isCameraActive, isOnline]);
 
     // Mesaj Takibi (Chat)
     useEffect(() => {
@@ -200,6 +199,7 @@ export default function MachineCard({ serial }: MachineProps) {
                     sender: 'admin',
                     text: "📷 Fotoğraf",
                     imageUrl: uploadData.url,
+                    imageFileId: uploadData.fileId || "",
                     timestamp: serverTimestamp()
                 });
                 setToast({ message: "Fotoğraf başarıyla gönderildi.", visible: true });
@@ -241,6 +241,30 @@ export default function MachineCard({ serial }: MachineProps) {
             window.open(blobUrl, '_blank');
         } catch (e) {
             console.error("Görsel yeni sekmede açılamadı:", e);
+        }
+    };
+
+    const handleDeleteMessage = async (msgId: string, imageFileId?: string) => {
+        if (!confirm("Bu mesajı silmek istediğinize emin misiniz?")) return;
+
+        try {
+            if (imageFileId) {
+                try {
+                    await fetch("/api/delete-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ fileId: imageFileId })
+                    });
+                } catch (e) {
+                    console.error("ImageKit resim silme hatası:", e);
+                }
+            }
+            
+            await remove(ref(db, `machines/${serial}/chat/messages/${msgId}`));
+            setToast({ message: "Mesaj silindi.", visible: true });
+        } catch (err) {
+            console.error("Mesaj silinemedi:", err);
+            setToast({ message: "Mesaj silinirken hata oluştu.", visible: true });
         }
     };
 
@@ -290,7 +314,7 @@ export default function MachineCard({ serial }: MachineProps) {
                                     <>
                                         {data?.camera_url && (
                                             <img
-                                                src={`${data.camera_url}?t=${imgTimestamp}`}
+                                                src={data.camera_url}
                                                 alt="CNC Camera"
                                                 className="w-full aspect-video object-cover transition-transform duration-1000 group-hover/cam:scale-110"
                                                 onError={(e: any) => e.target.style.display = 'none'}
@@ -454,8 +478,17 @@ export default function MachineCard({ serial }: MachineProps) {
                                     </div>
                                 ) : (
                                     messages.map((m) => (
-                                        <div key={m.id} className={`flex flex-col ${m.sender === 'admin' ? 'items-end' : 'items-start'}`}>
-                                            <div className={`p-3 rounded-2xl max-w-[85%] ${m.sender === 'admin' ? 'bg-red-600 text-white rounded-tr-none border border-red-500' : 'bg-[#1a1a1e] text-gray-300 rounded-tl-none border border-white/10'}`}>
+                                        <div key={m.id} className={`flex flex-col group/msg ${m.sender === 'admin' ? 'items-end' : 'items-start'}`}>
+                                            <div className={`p-3 rounded-2xl max-w-[85%] relative ${m.sender === 'admin' ? 'bg-red-600 text-white rounded-tr-none border border-red-500' : 'bg-[#1a1a1e] text-gray-300 rounded-tl-none border border-white/10'}`}>
+                                                {m.sender === 'admin' && (
+                                                    <button
+                                                        onClick={() => handleDeleteMessage(m.id, m.imageFileId)}
+                                                        className="absolute -top-2 -right-2 p-1.5 bg-red-900 hover:bg-red-700 text-white rounded-full opacity-0 group-hover/msg:opacity-100 transition-opacity border border-white/20 shadow-lg z-10"
+                                                        title="Mesajı Sil"
+                                                    >
+                                                        <Trash2 size={10} />
+                                                    </button>
+                                                )}
                                                 <p className="text-[13px] leading-relaxed">{m.text}</p>
                                                 {m.image && (
                                                     <img
@@ -552,7 +585,7 @@ export default function MachineCard({ serial }: MachineProps) {
                             <div className="relative aspect-video rounded-3xl md:rounded-[3rem] overflow-hidden border-2 md:border-4 border-white/10 shadow-[0_0_150px_rgba(220,38,38,0.2)]">
                                 {data?.camera_url && (
                                     <img
-                                        src={`${data.camera_url}?t=${imgTimestamp}`}
+                                        src={data.camera_url}
                                         alt="CNC Feed Fullscreen"
                                         className="w-full h-full object-cover bg-black"
                                         onError={(e: any) => e.target.style.display = 'none'}
@@ -599,7 +632,7 @@ export default function MachineCard({ serial }: MachineProps) {
                                     <>
                                         {data?.desktop_url && (
                                             <img
-                                                src={`${data.desktop_url}?t=${imgTimestamp}`}
+                                                src={data.desktop_url}
                                                 alt="Remote Desktop Feed"
                                                 className="w-full h-full object-contain cursor-crosshair"
                                                 onError={(e: any) => e.target.style.display = 'none'}

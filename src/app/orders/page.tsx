@@ -9,7 +9,7 @@ import Link from "next/link";
 import { 
     ImagePlus, Trash2, CheckCircle2, XCircle, RotateCcw,
     LogOut, LayoutDashboard, User as UserIcon, ShoppingCart,
-    Phone, Mail, MapPin
+    Phone, Mail, MapPin, UploadCloud, ChevronDown, Monitor
 } from "lucide-react";
 
 type OrderStatus = "pending" | "completed" | "cancelled";
@@ -20,8 +20,13 @@ type OrderItem = {
     status: OrderStatus;
     createdAt?: number;
     imageUrl?: string;
+    imageFileId?: string;
     imageData?: string; // Legacy
     imageName?: string;
+    machineSerial?: string;
+    designFileName?: string;
+    designStatus?: "waiting" | "downloaded" | "failed";
+    designFileId?: string;
 };
 
 export default function OrdersPage() {
@@ -33,6 +38,13 @@ export default function OrdersPage() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [imageData, setImageData] = useState("");
     const [imageName, setImageName] = useState("");
+    
+    // New States
+    const [machines, setMachines] = useState<string[]>([]);
+    const [selectedMachine, setSelectedMachine] = useState<string>("");
+    const [selectedDesignFile, setSelectedDesignFile] = useState<File | null>(null);
+    const [designFileName, setDesignFileName] = useState("");
+    
     const [errorMessage, setErrorMessage] = useState("");
     const router = useRouter();
 
@@ -71,7 +83,19 @@ export default function OrdersPage() {
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        const machinesRef = ref(db, "machines");
+        const unsubscribeMachines = onValue(machinesRef, (snapshot) => {
+            if (snapshot.val()) {
+                setMachines(Object.keys(snapshot.val()));
+            } else {
+                setMachines([]);
+            }
+        });
+
+        return () => {
+            unsubscribe();
+            unsubscribeMachines();
+        };
     }, []);
 
     const handleLogout = async () => {
@@ -107,11 +131,25 @@ export default function OrdersPage() {
         reader.readAsDataURL(file);
     };
 
+    const handleDesignChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        setErrorMessage("");
+        if (!file) return;
+
+        setDesignFileName(file.name);
+        setSelectedDesignFile(file);
+    };
+
     const clearSelectedImage = () => {
         setImageData("");
         setImageName("");
         setSelectedFile(null);
         setErrorMessage("");
+    };
+
+    const clearSelectedDesign = () => {
+        setDesignFileName("");
+        setSelectedDesignFile(null);
     };
 
     const addOrder = async () => {
@@ -121,6 +159,7 @@ export default function OrdersPage() {
             setSending(true);
             const cleanText = orderText.trim();
             let uploadedImageUrl = undefined;
+            let uploadedImageFileId = undefined;
 
             if (selectedFile) {
                 const formData = new FormData();
@@ -135,13 +174,40 @@ export default function OrdersPage() {
                 const uploadData = await uploadRes.json();
                 if (uploadData.success && uploadData.url) {
                     uploadedImageUrl = uploadData.url;
+                    uploadedImageFileId = uploadData.fileId;
                 } else {
                     throw new Error("Görsel yüklenemedi");
                 }
             }
 
+            let uploadedDesignUrl = undefined;
+            let uploadedDesignFileId = undefined;
+
+            if (selectedDesignFile && selectedMachine) {
+                const formData = new FormData();
+                formData.append("file", selectedDesignFile);
+                formData.append("serial", selectedMachine);
+                
+                const uploadRes = await fetch("/api/send-design-file", {
+                    method: "POST",
+                    body: formData,
+                });
+                
+                const uploadData = await uploadRes.json();
+                if (uploadData.success && uploadData.url) {
+                    uploadedDesignUrl = uploadData.url;
+                    uploadedDesignFileId = uploadData.fileId;
+                } else {
+                    throw new Error("Tasarım dosyası yüklenemedi");
+                }
+            } else if (selectedDesignFile && !selectedMachine) {
+                // Ignore or throw error if design file attached but no machine
+                throw new Error("Tasarım dosyası eklendiğinde makine seçimi zorunludur!");
+            }
+
             const ordersRef = ref(db, "orders");
             const newOrderRef = push(ordersRef);
+            const newOrderId = newOrderRef.key;
 
             const orderDataToSave: any = {
                 text: cleanText,
@@ -151,10 +217,33 @@ export default function OrdersPage() {
 
             if (uploadedImageUrl) {
                 orderDataToSave.imageUrl = uploadedImageUrl;
+                orderDataToSave.imageFileId = uploadedImageFileId || "";
                 orderDataToSave.imageName = imageName;
             }
 
+            if (selectedMachine) {
+                orderDataToSave.machineSerial = selectedMachine;
+            }
+
+            if (uploadedDesignUrl) {
+                orderDataToSave.designFileName = designFileName;
+                orderDataToSave.designStatus = "waiting";
+                orderDataToSave.designFileId = uploadedDesignFileId;
+            }
+
             await set(newOrderRef, orderDataToSave);
+
+            if (uploadedDesignUrl && selectedMachine) {
+                const pendingRef = ref(db, `machines/${selectedMachine}/pending_file`);
+                await set(pendingRef, {
+                    fileName: designFileName,
+                    tempUrl: uploadedDesignUrl,
+                    fileId: uploadedDesignFileId,
+                    status: "waiting",
+                    orderId: newOrderId,
+                    createdAt: Date.now()
+                });
+            }
 
             await fetch("/api/orders", {
                 method: "POST",
@@ -166,9 +255,11 @@ export default function OrdersPage() {
 
             setOrderText("");
             clearSelectedImage();
-        } catch (error) {
+            clearSelectedDesign();
+            // Optional: setSelectedMachine("") if you want to reset machine selection
+        } catch (error: any) {
             console.error("Order add error:", error);
-            setErrorMessage("Order could not be added.");
+            setErrorMessage(error.message || "Order could not be added.");
         } finally {
             setSending(false);
         }
@@ -182,8 +273,34 @@ export default function OrdersPage() {
         }
     };
 
-    const deleteOrder = async (id: string) => {
+    const deleteOrder = async (id: string, orderToDelete?: OrderItem) => {
         try {
+            // İlgili fotoğraf varsa ImageKit üzerinden sil
+            if (orderToDelete?.imageFileId) {
+                try {
+                    await fetch("/api/delete-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ fileId: orderToDelete.imageFileId })
+                    });
+                } catch (e) {
+                    console.error("ImageKit silme hatası (image):", e);
+                }
+            }
+
+            // Eğer tasarım dosyası henüz inmemişse (waiting) ImageKit üzerinden sil
+            if (orderToDelete?.designFileId && orderToDelete.designStatus === "waiting") {
+                try {
+                    await fetch("/api/delete-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ fileId: orderToDelete.designFileId })
+                    });
+                } catch (e) {
+                    console.error("ImageKit silme hatası (design):", e);
+                }
+            }
+
             await remove(ref(db, `orders/${id}`));
         } catch (error) {
             console.error("Delete error:", error);
@@ -272,10 +389,32 @@ export default function OrdersPage() {
 
                     <div className="mt-4 flex flex-col gap-4">
                         <div className="flex items-center gap-3">
+                            <div className="relative w-64">
+                                <select 
+                                    className="w-full appearance-none bg-[#111113] border border-white/10 rounded-2xl py-3 px-4 pr-10 text-sm font-semibold outline-none focus:border-red-500/50 transition-colors text-white"
+                                    value={selectedMachine}
+                                    onChange={(e) => setSelectedMachine(e.target.value)}
+                                >
+                                    <option value="" className="text-gray-500">Hedef Makine (İsteğe Bağlı)</option>
+                                    {machines.map(m => (
+                                        <option key={m} value={m}>{m}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
                             <label className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition">
                                 <ImagePlus size={18} />
-                                <span className="text-sm font-semibold">Attach Image</span>
+                                <span className="text-sm font-semibold hidden md:inline">Görsel Ekle</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                            </label>
+
+                            <label className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-blue-600/10 text-blue-400 border border-blue-500/20 cursor-pointer hover:bg-blue-600/20 transition">
+                                <UploadCloud size={18} />
+                                <span className="text-sm font-semibold hidden md:inline">Tasarım Ekle</span>
+                                <input type="file" accept=".dxf,.ai,.pdf,.zip,.rar" className="hidden" onChange={handleDesignChange} />
                             </label>
                             
                             <button
@@ -289,7 +428,7 @@ export default function OrdersPage() {
 
                         {imageData && (
                             <div className="bg-[#111113] border border-white/10 rounded-2xl p-4 w-fit max-w-full">
-                                <p className="text-xs text-gray-400 mb-3">Selected image: {imageName}</p>
+                                <p className="text-xs text-gray-400 mb-3">Seçilen görsel: {imageName}</p>
                                 <img
                                     src={imageData}
                                     alt="Selected preview"
@@ -299,7 +438,23 @@ export default function OrdersPage() {
                                     onClick={clearSelectedImage}
                                     className="mt-3 px-3 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-semibold transition"
                                 >
-                                    Remove Image
+                                    Görseli Kaldır
+                                </button>
+                            </div>
+                        )}
+
+                        {selectedDesignFile && (
+                            <div className="bg-[#111113] border border-blue-500/20 rounded-2xl p-4 w-fit max-w-full border-dashed">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <UploadCloud size={20} className="text-blue-400" />
+                                    <span className="text-sm font-semibold text-blue-400">Tasarım Dosyası</span>
+                                </div>
+                                <p className="text-xs text-gray-300 mb-3">{designFileName}</p>
+                                <button
+                                    onClick={clearSelectedDesign}
+                                    className="px-3 py-2 rounded-xl bg-blue-900/40 hover:bg-blue-900/60 text-blue-300 text-sm font-semibold transition"
+                                >
+                                    Dosyayı Kaldır
                                 </button>
                             </div>
                         )}
@@ -320,8 +475,15 @@ export default function OrdersPage() {
                                 className="bg-white/5 border border-white/10 rounded-3xl p-5 shadow-lg flex flex-col"
                             >
                                 <div className="flex items-start justify-between gap-3 mb-4">
-                                    <h2 className="text-lg font-bold text-white">Order</h2>
-                                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${getStatusClass(order.status)}`}>
+                                    <div className="flex flex-col gap-1">
+                                        <h2 className="text-lg font-bold text-white">Sipariş / Not</h2>
+                                        {order.machineSerial && (
+                                            <div className="flex items-center gap-1.5 text-xs text-blue-400 font-bold bg-blue-500/10 px-2 py-1 rounded-lg w-fit">
+                                                <Monitor size={12} /> {order.machineSerial}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <span className={`text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap ${getStatusClass(order.status)}`}>
                                         {getStatusLabel(order.status)}
                                     </span>
                                 </div>
@@ -340,6 +502,22 @@ export default function OrdersPage() {
                                 )}
 
                                 <p className="text-sm text-gray-200 whitespace-pre-wrap mb-5 flex-1">{order.text}</p>
+
+                                {order.designFileName && (
+                                    <div className="mb-5 bg-[#0a0a0b] border border-white/5 rounded-2xl p-3 flex flex-col gap-2">
+                                        <div className="flex justify-between items-center text-xs text-gray-400">
+                                            <span className="flex items-center gap-1.5"><UploadCloud size={14} className="text-blue-400"/> {order.designFileName}</span>
+                                            <span className={`px-2 py-0.5 rounded-full font-bold uppercase tracking-wider text-[9px] ${
+                                                order.designStatus === 'waiting' ? 'bg-amber-500/20 text-amber-500' :
+                                                order.designStatus === 'downloaded' ? 'bg-green-500/20 text-green-500' :
+                                                'bg-red-500/20 text-red-500'
+                                            }`}>
+                                                {order.designStatus === 'waiting' ? 'Makineye İniyor...' :
+                                                 order.designStatus === 'downloaded' ? 'Makineye İndi' : 'Hata'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-2 gap-2">
                                     <button
@@ -364,7 +542,7 @@ export default function OrdersPage() {
                                     </button>
 
                                     <button
-                                        onClick={() => deleteOrder(order.id)}
+                                        onClick={() => deleteOrder(order.id, order)}
                                         className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-bold transition"
                                     >
                                         <Trash2 size={16} /> Sil
