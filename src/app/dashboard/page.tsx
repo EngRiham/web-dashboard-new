@@ -5,8 +5,9 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, update, get } from "firebase/database";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import MachineCard from "@/components/MachineCard";
-import { LogOut, LayoutDashboard, User as UserIcon, Shield, Phone, Mail, MapPin } from "lucide-react";
+import { LogOut, LayoutDashboard, User as UserIcon, Shield, Phone, Mail, MapPin, ShoppingCart } from "lucide-react";
 
 export default function DashboardPage() {
     const [user, setUser] = useState<any>(null);
@@ -67,6 +68,10 @@ export default function DashboardPage() {
                     <button className="w-full flex items-center gap-3 px-4 py-3.5 bg-red-600/10 text-red-500 rounded-2xl font-bold text-sm tracking-wide">
                         <LayoutDashboard size={18} /> Dashboard
                     </button>
+
+                    <Link href="/orders" className="w-full flex items-center gap-3 px-4 py-3.5 text-gray-500 hover:text-red-500 hover:bg-red-600/5 rounded-2xl transition-all font-bold text-sm tracking-wide">
+                        <ShoppingCart size={18} /> Orders
+                    </Link>
 
                     <div className="px-4 py-8">
                         <p className="text-[10px] text-gray-600 font-bold uppercase tracking-[0.3em] mb-4">Hesap</p>
