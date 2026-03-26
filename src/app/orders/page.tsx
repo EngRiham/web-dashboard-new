@@ -19,7 +19,8 @@ type OrderItem = {
     text: string;
     status: OrderStatus;
     createdAt?: number;
-    imageData?: string;
+    imageUrl?: string;
+    imageData?: string; // Legacy
     imageName?: string;
 };
 
@@ -29,6 +30,7 @@ export default function OrdersPage() {
     const [orderText, setOrderText] = useState("");
     const [orders, setOrders] = useState<OrderItem[]>([]);
     const [sending, setSending] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [imageData, setImageData] = useState("");
     const [imageName, setImageName] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
@@ -99,6 +101,7 @@ export default function OrdersPage() {
             if (typeof result === "string") {
                 setImageData(result);
                 setImageName(file.name);
+                setSelectedFile(file);
             }
         };
         reader.readAsDataURL(file);
@@ -107,6 +110,7 @@ export default function OrdersPage() {
     const clearSelectedImage = () => {
         setImageData("");
         setImageName("");
+        setSelectedFile(null);
         setErrorMessage("");
     };
 
@@ -116,17 +120,41 @@ export default function OrdersPage() {
         try {
             setSending(true);
             const cleanText = orderText.trim();
+            let uploadedImageUrl = undefined;
+
+            if (selectedFile) {
+                const formData = new FormData();
+                formData.append("file", selectedFile);
+                formData.append("folder", "/orders/");
+                
+                const uploadRes = await fetch("/api/upload-image", {
+                    method: "POST",
+                    body: formData,
+                });
+                
+                const uploadData = await uploadRes.json();
+                if (uploadData.success && uploadData.url) {
+                    uploadedImageUrl = uploadData.url;
+                } else {
+                    throw new Error("Görsel yüklenemedi");
+                }
+            }
 
             const ordersRef = ref(db, "orders");
             const newOrderRef = push(ordersRef);
 
-            await set(newOrderRef, {
+            const orderDataToSave: any = {
                 text: cleanText,
                 status: "pending",
                 createdAt: Date.now(),
-                imageData: imageData || "",
-                imageName: imageName || "",
-            });
+            };
+
+            if (uploadedImageUrl) {
+                orderDataToSave.imageUrl = uploadedImageUrl;
+                orderDataToSave.imageName = imageName;
+            }
+
+            await set(newOrderRef, orderDataToSave);
 
             await fetch("/api/orders", {
                 method: "POST",
@@ -298,10 +326,10 @@ export default function OrdersPage() {
                                     </span>
                                 </div>
 
-                                {order.imageData && (
+                                {(order.imageUrl || order.imageData) && (
                                     <div className="mb-4">
                                         <img
-                                            src={order.imageData}
+                                            src={order.imageUrl || order.imageData}
                                             alt={order.imageName || "Order image"}
                                             className="w-full h-52 object-cover rounded-2xl border border-white/10"
                                         />

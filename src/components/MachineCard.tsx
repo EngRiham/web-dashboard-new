@@ -29,6 +29,7 @@ interface ChatMessage {
     text: string;
     timestamp: number;
     image?: string;
+    imageUrl?: string;
 }
 
 export default function MachineCard({ serial }: MachineProps) {
@@ -39,6 +40,7 @@ export default function MachineCard({ serial }: MachineProps) {
     const [showInfo, setShowInfo] = useState(false);
     const [mountTime] = useState(Date.now());
     const [imgTimestamp, setImgTimestamp] = useState(Date.now());
+    const [isCameraActive, setIsCameraActive] = useState(false);
 
     // Chat State
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -75,6 +77,17 @@ export default function MachineCard({ serial }: MachineProps) {
 
         return () => unsubscribe();
     }, [serial]);
+
+    // Kamera Güncelleme Döngüsü (Sadece aktifse)
+    useEffect(() => {
+        if (!isCameraActive || !isOnline) return;
+
+        const interval = setInterval(() => {
+            setImgTimestamp(Date.now());
+        }, 3000);
+
+        return () => clearInterval(interval);
+    }, [isCameraActive, isOnline]);
 
     // Mesaj Takibi (Chat)
     useEffect(() => {
@@ -155,11 +168,52 @@ export default function MachineCard({ serial }: MachineProps) {
         }
     };
 
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setToast({ message: "Fotoğraf gönderimi optimizasyon nedeniyle geçici olarak devre dışıdır.", visible: true });
-        setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
-        // İşlem bitince input'u temizle
-        if (fileInputRef.current) fileInputRef.current.value = '';
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 2 * 1024 * 1024) {
+            setToast({ message: "Görsel 2 MB'tan küçük olmalıdır.", visible: true });
+            setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+            return;
+        }
+
+        setChatLoading(true);
+        setToast({ message: "Fotoğraf yükleniyor...", visible: true });
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("folder", `/chat/${serial}/`);
+
+            const uploadRes = await fetch("/api/upload-image", {
+                method: "POST",
+                body: formData,
+            });
+
+            const uploadData = await uploadRes.json();
+            
+            if (uploadData.success && uploadData.url) {
+                const chatRef = ref(db, `machines/${serial}/chat/messages`);
+                const newMsgRef = push(chatRef);
+                await set(newMsgRef, {
+                    sender: 'admin',
+                    text: "📷 Fotoğraf",
+                    imageUrl: uploadData.url,
+                    timestamp: serverTimestamp()
+                });
+                setToast({ message: "Fotoğraf başarıyla gönderildi.", visible: true });
+            } else {
+                setToast({ message: "Fotoğraf yüklenemedi.", visible: true });
+            }
+        } catch (err) {
+            console.error("Fotoğraf yükleme hatası:", err);
+            setToast({ message: "Fotoğraf yüklenirken hata oluştu.", visible: true });
+        } finally {
+            setChatLoading(false);
+            setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     const toggleRemoteView = async (active: boolean) => {
@@ -232,22 +286,42 @@ export default function MachineCard({ serial }: MachineProps) {
                     <div className="relative mx-5 mt-8 mb-4 bg-black rounded-xl border-[6px] border-[#1a1a1e] shadow-[inset_0_10px_20px_rgba(0,0,0,0.9),0_5px_15px_rgba(0,0,0,0.3)] overflow-hidden group/cam">
                         {isOnline ? (
                             <>
-                                {data?.camera_url && (
-                                    <img
-                                        src={`${data.camera_url}?t=${imgTimestamp}`}
-                                        alt="CNC Camera"
-                                        className="w-full aspect-video object-cover transition-transform duration-1000 group-hover/cam:scale-110"
-                                        onError={(e: any) => e.target.style.display = 'none'}
-                                    />
-                                )}
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/cam:opacity-100 transition-all duration-500 flex items-center justify-center backdrop-blur-[2px] z-30">
-                                    <button
-                                        onClick={() => setIsFullscreen(true)}
-                                        className="bg-red-600 hover:bg-red-500 text-white p-4 rounded-2xl shadow-2xl transform scale-75 group-hover/cam:scale-100 transition-all duration-500 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest border border-white/20"
+                                {isCameraActive ? (
+                                    <>
+                                        {data?.camera_url && (
+                                            <img
+                                                src={`${data.camera_url}?t=${imgTimestamp}`}
+                                                alt="CNC Camera"
+                                                className="w-full aspect-video object-cover transition-transform duration-1000 group-hover/cam:scale-110"
+                                                onError={(e: any) => e.target.style.display = 'none'}
+                                            />
+                                        )}
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/cam:opacity-100 transition-all duration-500 flex flex-col items-center justify-center backdrop-blur-[2px] z-30 gap-2">
+                                            <button
+                                                onClick={() => setIsFullscreen(true)}
+                                                className="bg-red-600 hover:bg-red-500 text-white p-4 rounded-2xl shadow-2xl transform scale-75 group-hover/cam:scale-100 transition-all duration-500 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest border border-white/20"
+                                            >
+                                                <Maximize2 size={24} /> TAM EKRAN İZLE
+                                            </button>
+                                            <button
+                                                onClick={() => setIsCameraActive(false)}
+                                                className="bg-white/10 hover:bg-white/20 text-white p-3 rounded-xl shadow-lg transform scale-75 group-hover/cam:scale-100 transition-all duration-500 flex items-center gap-2 font-bold uppercase text-[9px] tracking-widest border border-white/10 mt-2"
+                                            >
+                                                <X size={16} /> KAMERAYI DURDUR
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div 
+                                        className="w-full aspect-video flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 transition-colors"
+                                        onClick={() => setIsCameraActive(true)}
                                     >
-                                        <Maximize2 size={24} /> TAM EKRAN İZLE
-                                    </button>
-                                </div>
+                                        <Camera className="text-white/30 mb-3" size={40} />
+                                        <p className="text-white/50 text-xs font-black tracking-[0.2em] justify-center uppercase shadow-black drop-shadow-md">
+                                            Click to start camera
+                                        </p>
+                                    </div>
+                                )}
                                 <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
                             </>
                         ) : (
@@ -385,10 +459,18 @@ export default function MachineCard({ serial }: MachineProps) {
                                                 <p className="text-[13px] leading-relaxed">{m.text}</p>
                                                 {m.image && (
                                                     <img
-                                                        src={`data:image/jpeg;base64,${m.image}`}
+                                                        src={m.image.startsWith('data:') ? m.image : `data:image/jpeg;base64,${m.image}`}
                                                         alt="Chat Attached"
                                                         className={`mt-2 w-full ${isChatExpanded ? 'max-w-[400px]' : 'max-w-[200px]'} rounded-lg cursor-pointer hover:opacity-90 transition-opacity border border-white/10 shadow-md`}
                                                         onClick={() => m.image && openImageInNewTab(m.image)}
+                                                    />
+                                                )}
+                                                {m.imageUrl && (
+                                                    <img
+                                                        src={m.imageUrl}
+                                                        alt="Chat Attached (Cloud)"
+                                                        className={`mt-2 w-full ${isChatExpanded ? 'max-w-[400px]' : 'max-w-[200px]'} rounded-lg cursor-pointer hover:opacity-90 transition-opacity border border-white/10 shadow-md`}
+                                                        onClick={() => window.open(m.imageUrl, '_blank')}
                                                     />
                                                 )}
                                             </div>
@@ -411,9 +493,10 @@ export default function MachineCard({ serial }: MachineProps) {
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => setToast({ message: "Fotoğraf gönderimi devre dışıdır.", visible: true })}
-                                    className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-gray-400 opacity-30 cursor-not-allowed"
-                                    title="Fotoğraf Gönder (Devre Dışı)"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                                    title="Fotoğraf Gönder"
+                                    disabled={chatLoading}
                                 >
                                     <ImageIcon size={18} />
                                 </button>
