@@ -103,7 +103,58 @@ export default function OrdersPage() {
         router.push("/login");
     };
 
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const compressImage = (file: File): Promise<File> => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target?.result as string;
+                img.onload = () => {
+                    const canvas = document.createElement("canvas");
+                    const MAX_WIDTH = 1920;
+                    const MAX_HEIGHT = 1920;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext("2d");
+                    ctx?.drawImage(img, 0, 0, width, height);
+
+                    canvas.toBlob(
+                        (blob) => {
+                            if (blob) {
+                                const compressedFile = new File([blob], file.name, {
+                                    type: "image/jpeg",
+                                    lastModified: Date.now(),
+                                });
+                                resolve(compressedFile);
+                            } else {
+                                resolve(file);
+                            }
+                        },
+                        "image/jpeg",
+                        0.8
+                    );
+                };
+            };
+        });
+    };
+
+    const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         setErrorMessage("");
 
@@ -114,27 +165,50 @@ export default function OrdersPage() {
             return;
         }
 
-        if (file.size > 2 * 1024 * 1024) {
-            setErrorMessage("Image must be smaller than 2 MB.");
+        // Limit increased to 20MB for mobile photos, but we will compress it anyway
+        if (file.size > 20 * 1024 * 1024) {
+            setErrorMessage("Görsel boyutu çok büyük (Maksimum 20MB).");
             return;
         }
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const result = reader.result;
-            if (typeof result === "string") {
-                setImageData(result);
-                setImageName(file.name);
-                setSelectedFile(file);
-            }
-        };
-        reader.readAsDataURL(file);
+        try {
+            const compressedFile = await compressImage(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const result = reader.result;
+                if (typeof result === "string") {
+                    setImageData(result);
+                    setImageName(file.name);
+                    setSelectedFile(compressedFile);
+                }
+            };
+            reader.readAsDataURL(compressedFile);
+        } catch (err) {
+            console.error("Compression error:", err);
+            // Fallback to original file
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const result = reader.result;
+                if (typeof result === "string") {
+                    setImageData(result);
+                    setImageName(file.name);
+                    setSelectedFile(file);
+                }
+            };
+            reader.readAsDataURL(file);
+        }
     };
 
     const handleDesignChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         setErrorMessage("");
         if (!file) return;
+
+        // Design files (DXF, PDF etc) can be larger, limit to 20MB
+        if (file.size > 20 * 1024 * 1024) {
+            setErrorMessage("Dosya boyutu çok büyük (Maksimum 20MB).");
+            return;
+        }
 
         setDesignFileName(file.name);
         setSelectedDesignFile(file);
@@ -322,10 +396,10 @@ export default function OrdersPage() {
     if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Yükleniyor...</div>;
 
     return (
-        <div className="min-h-screen bg-[#0a0a0b] text-white font-[family-name:var(--font-geist-sans)] flex flex-col md:flex-row">
+        <div className="h-screen bg-[#0a0a0b] text-white font-[family-name:var(--font-geist-sans)] flex flex-col md:flex-row overflow-hidden">
             {/* Sidebar / Header */}
-            <aside className="w-full md:w-72 bg-[#111113] border-b md:border-b-0 md:border-r border-white/5 flex flex-col p-6 z-20 pb-14">
-                <div className="flex items-center justify-between md:flex-col md:items-start gap-3 mb-4 md:mb-12">
+            <aside className="w-full md:w-72 bg-[#111113] border-b md:border-b-0 md:border-r border-white/5 flex flex-col p-4 md:p-6 z-20">
+                <div className="flex items-center justify-between md:flex-col md:items-start gap-3 mb-0 md:mb-12">
                     <div className="flex items-center gap-4">
                         <div className="w-16 h-16 bg-red-950/30 rounded-2xl flex items-center justify-center border border-red-500/20 shadow-[0_0_20px_rgba(220,38,38,0.1)]">
                             <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain" onError={(e: any) => e.target.style.display = 'none'} />
@@ -372,30 +446,30 @@ export default function OrdersPage() {
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 p-6 md:p-12 overflow-y-auto relative flex flex-col">
+            <main className="flex-1 p-4 md:p-12 pb-24 md:pb-12 overflow-y-auto relative flex flex-col">
                 <div className="absolute top-0 right-0 w-[30%] h-[30%] bg-red-900/5 blur-[120px] rounded-full -z-10"></div>
 
-                <header className="flex justify-between items-center mb-12">
-                    <h1 className="text-3xl font-black tracking-wide">Orders</h1>
+                <header className="flex justify-between items-center mb-6 md:mb-12">
+                    <h1 className="text-2xl md:text-3xl font-black tracking-wide">Orders</h1>
                 </header>
 
-                <div className="bg-white/5 border border-white/10 rounded-3xl p-5 md:p-6 mb-8 shadow-lg">
+                <div className="bg-white/5 border border-white/10 rounded-2xl md:rounded-3xl p-4 md:p-6 mb-6 md:mb-8 shadow-lg">
                     <textarea
                         value={orderText}
                         onChange={(e) => setOrderText(e.target.value)}
                         placeholder="Write order details..."
-                        className="w-full min-h-[140px] rounded-2xl bg-[#111113] border border-white/10 p-4 text-white placeholder:text-gray-500 outline-none"
+                        className="w-full min-h-[100px] md:min-h-[140px] rounded-2xl bg-[#111113] border border-white/10 p-4 text-white placeholder:text-gray-500 outline-none"
                     />
 
                     <div className="mt-4 flex flex-col gap-4">
-                        <div className="flex items-center gap-3">
-                            <div className="relative w-64">
+                        <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
+                            <div className="relative w-full md:w-64">
                                 <select 
-                                    className="w-full appearance-none bg-[#111113] border border-white/10 rounded-2xl py-3 px-4 pr-10 text-sm font-semibold outline-none focus:border-red-500/50 transition-colors text-white"
+                                    className="w-full appearance-none bg-[#111113] border border-white/10 rounded-xl md:rounded-2xl py-3 px-4 pr-10 text-sm font-semibold outline-none focus:border-red-500/50 transition-colors text-white"
                                     value={selectedMachine}
                                     onChange={(e) => setSelectedMachine(e.target.value)}
                                 >
-                                    <option value="" className="text-gray-500">Hedef Makine (İsteğe Bağlı)</option>
+                                    <option value="" className="text-gray-500 text-xs">Hedef Makine (İsteğe Bağlı)</option>
                                     {machines.map(m => (
                                         <option key={m} value={m}>{m}</option>
                                     ))}
@@ -404,23 +478,23 @@ export default function OrdersPage() {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <label className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition">
-                                <ImagePlus size={18} />
-                                <span className="text-sm font-semibold hidden md:inline">Görsel Ekle</span>
+                        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                            <label className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 px-3 md:px-4 py-3 rounded-xl md:rounded-2xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition">
+                                <ImagePlus size={18} className="text-gray-400" />
+                                <span className="text-xs md:text-sm font-semibold">Görsel</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                             </label>
 
-                            <label className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-blue-600/10 text-blue-400 border border-blue-500/20 cursor-pointer hover:bg-blue-600/20 transition">
+                            <label className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 px-3 md:px-4 py-3 rounded-xl md:rounded-2xl bg-blue-600/10 text-blue-400 border border-blue-500/20 cursor-pointer hover:bg-blue-600/20 transition">
                                 <UploadCloud size={18} />
-                                <span className="text-sm font-semibold hidden md:inline">Tasarım Ekle</span>
+                                <span className="text-xs md:text-sm font-semibold">Tasarım</span>
                                 <input type="file" accept=".dxf,.ai,.pdf,.zip,.rar" className="hidden" onChange={handleDesignChange} />
                             </label>
                             
                             <button
                                 onClick={addOrder}
                                 disabled={sending}
-                                className="px-5 py-3 rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-60 disabled:cursor-not-allowed transition font-bold"
+                                className="w-full md:w-auto px-6 py-3 rounded-xl md:rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-60 disabled:cursor-not-allowed transition font-bold"
                             >
                                 {sending ? "Adding..." : "Add Order"}
                             </button>
@@ -483,7 +557,7 @@ export default function OrdersPage() {
                                             </div>
                                         )}
                                     </div>
-                                    <span className={`text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap ${getStatusClass(order.status)}`}>
+                                    <span className={`text-[10px] md:text-xs font-bold px-2 md:px-3 py-1 rounded-full whitespace-nowrap ${getStatusClass(order.status)}`}>
                                         {getStatusLabel(order.status)}
                                     </span>
                                 </div>
@@ -571,6 +645,17 @@ export default function OrdersPage() {
                     </div>
                 </footer>
             </main>
+            {/* Mobile Bottom Navigation */}
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#111113]/80 backdrop-blur-lg border-t border-white/5 px-8 py-4 flex justify-around items-center z-50">
+                <Link href="/dashboard" className="flex flex-col items-center gap-1 text-gray-400 hover:text-white transition-colors">
+                    <LayoutDashboard size={20} />
+                    <span className="text-[10px] font-bold uppercase tracking-tight">Dashboard</span>
+                </Link>
+                <Link href="/orders" className="flex flex-col items-center gap-1 text-red-500">
+                    <ShoppingCart size={20} />
+                    <span className="text-[10px] font-bold uppercase tracking-tight">Orders</span>
+                </Link>
+            </nav>
         </div>
     );
 }

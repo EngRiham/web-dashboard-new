@@ -97,7 +97,7 @@ export default function DashboardPage() {
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 p-6 md:p-12 overflow-y-auto relative flex flex-col">
+            <main className="flex-1 p-6 md:p-12 pb-24 md:pb-12 overflow-y-auto relative flex flex-col">
                 <div className="absolute top-0 right-0 w-[30%] h-[30%] bg-red-900/5 blur-[120px] rounded-full -z-10"></div>
 
                 <header className="flex justify-center items-center mb-12">
@@ -168,6 +168,18 @@ export default function DashboardPage() {
                     </div>
                 </footer>
             </main>
+            
+            {/* Mobile Bottom Navigation */}
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#111113]/80 backdrop-blur-lg border-t border-white/5 px-8 py-4 flex justify-around items-center z-50">
+                <Link href="/dashboard" className="flex flex-col items-center gap-1 text-red-500">
+                    <LayoutDashboard size={20} />
+                    <span className="text-[10px] font-bold uppercase tracking-tight">Dashboard</span>
+                </Link>
+                <Link href="/orders" className="flex flex-col items-center gap-1 text-gray-400 hover:text-white transition-colors">
+                    <ShoppingCart size={20} />
+                    <span className="text-[10px] font-bold uppercase tracking-tight">Orders</span>
+                </Link>
+            </nav>
         </div>
     );
 }
